@@ -13,7 +13,7 @@
 static int read_out(int fd, tx_out_t *out, uint8_t endianness)
 {
 if (READ(fd, &out->amount, 4) || READ(fd, out->pub, EC_PUB_LEN) ||
-    READ(fd, out->hash, SHA256_DIGEST_LENGTH))
+	READ(fd, out->hash, SHA256_DIGEST_LENGTH))
 return (-1);
 CHECK_ENDIAN(out->amount);
 return (0);
@@ -38,8 +38,8 @@ return (free(tx), -1);
 tx->inputs = llist_create(MT_SUPPORT_FALSE);
 tx->outputs = llist_create(MT_SUPPORT_FALSE);
 if (!tx->inputs || !tx->outputs ||
-    READ(fd, tx->id, SHA256_DIGEST_LENGTH) ||
-    READ(fd, &nb_in, 4) || READ(fd, &nb_out, 4))
+	READ(fd, tx->id, SHA256_DIGEST_LENGTH) ||
+	READ(fd, &nb_in, 4) || READ(fd, &nb_out, 4))
 return (-1);
 CHECK_ENDIAN(nb_in);
 CHECK_ENDIAN(nb_out);
@@ -49,9 +49,9 @@ in = calloc(1, sizeof(*in));
 if (!in || llist_add_node(tx->inputs, in, ADD_NODE_REAR))
 return (free(in), -1);
 if (READ(fd, in->block_hash, SHA256_DIGEST_LENGTH) ||
-    READ(fd, in->tx_id, SHA256_DIGEST_LENGTH) ||
-    READ(fd, in->tx_out_hash, SHA256_DIGEST_LENGTH) ||
-    READ(fd, in->sig.sig, SIG_MAX_LEN) || READ(fd, &in->sig.len, 1))
+	READ(fd, in->tx_id, SHA256_DIGEST_LENGTH) ||
+	READ(fd, in->tx_out_hash, SHA256_DIGEST_LENGTH) ||
+	READ(fd, in->sig.sig, SIG_MAX_LEN) || READ(fd, &in->sig.len, 1))
 return (-1);
 }
 for (i = 0; i < nb_out; i++)
@@ -77,7 +77,7 @@ static int read_block(int fd, block_t *block, uint8_t endianness)
 int32_t nb_tx, i;
 
 if (READ(fd, &block->info, sizeof(block->info)) ||
-    READ(fd, &block->data.len, 4))
+	READ(fd, &block->data.len, 4))
 return (-1);
 CHECK_ENDIAN(block->info.index);
 CHECK_ENDIAN(block->info.difficulty);
@@ -85,9 +85,9 @@ CHECK_ENDIAN(block->info.timestamp);
 CHECK_ENDIAN(block->info.nonce);
 CHECK_ENDIAN(block->data.len);
 if (block->data.len > BLOCKCHAIN_DATA_MAX ||
-    READ(fd, block->data.buffer, block->data.len) ||
-    READ(fd, block->hash, SHA256_DIGEST_LENGTH) ||
-    READ(fd, &nb_tx, 4))
+	READ(fd, block->data.buffer, block->data.len) ||
+	READ(fd, block->hash, SHA256_DIGEST_LENGTH) ||
+	READ(fd, &nb_tx, 4))
 return (-1);
 CHECK_ENDIAN(nb_tx);
 if (nb_tx == -1)
@@ -153,9 +153,9 @@ fd = open(path, O_RDONLY);
 if (fd == -1)
 return (NULL);
 if (READ(fd, buf, 4) || memcmp(buf, HBLK_MAGIC, 4) ||
-    READ(fd, buf, 3) || memcmp(buf, HBLK_VERSION, 3) ||
-    READ(fd, &endianness, 1) || READ(fd, &nb_blocks, 4) ||
-    READ(fd, &nb_unspent, 4))
+	READ(fd, buf, 3) || memcmp(buf, HBLK_VERSION, 3) ||
+	READ(fd, &endianness, 1) || READ(fd, &nb_blocks, 4) ||
+	READ(fd, &nb_unspent, 4))
 return (close(fd), NULL);
 endianness = endianness != _get_endianness();
 CHECK_ENDIAN(nb_blocks);
@@ -175,8 +175,8 @@ u = calloc(1, sizeof(*u));
 if (!u || llist_add_node(chain->unspent, u, ADD_NODE_REAR))
 return (free(u), blockchain_destroy(chain), close(fd), NULL);
 if (READ(fd, u->block_hash, SHA256_DIGEST_LENGTH) ||
-    READ(fd, u->tx_id, SHA256_DIGEST_LENGTH) ||
-    read_out(fd, &u->out, endianness))
+	READ(fd, u->tx_id, SHA256_DIGEST_LENGTH) ||
+	read_out(fd, &u->out, endianness))
 return (blockchain_destroy(chain), close(fd), NULL);
 }
 return (close(fd), chain);

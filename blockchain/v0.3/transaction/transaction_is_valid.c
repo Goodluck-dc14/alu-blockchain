@@ -12,8 +12,8 @@ unspent_tx_out_t *utxo = node;
 tx_in_t *txi = arg;
 
 if (!memcmp(txi->block_hash, utxo->block_hash, SHA256_DIGEST_LENGTH) &&
-    !memcmp(txi->tx_id, utxo->tx_id, SHA256_DIGEST_LENGTH) &&
-    !memcmp(txi->tx_out_hash, utxo->out.hash, SHA256_DIGEST_LENGTH))
+	!memcmp(txi->tx_id, utxo->tx_id, SHA256_DIGEST_LENGTH) &&
+	!memcmp(txi->tx_out_hash, utxo->out.hash, SHA256_DIGEST_LENGTH))
 return (1);
 return (0);
 }
@@ -40,7 +40,7 @@ return (1);
 }
 key = ec_from_pub(utxo->out.pub);
 if (!key ||
-    !ec_verify(key, visitor->tx->id, SHA256_DIGEST_LENGTH, &txi->sig))
+	!ec_verify(key, visitor->tx->id, SHA256_DIGEST_LENGTH, &txi->sig))
 {
 visitor->valid = 0;
 return (EC_KEY_free(key), 1);
@@ -90,10 +90,10 @@ return (0);
 if (memcmp(transaction->id, hash_buf, SHA256_DIGEST_LENGTH))
 return (0);
 if (llist_for_each(transaction->inputs, check_inputs, &visitor) ||
-    !visitor.valid)
+	!visitor.valid)
 return (0);
 if (llist_for_each(transaction->outputs, check_outputs, &visitor) ||
-    visitor.in_amount != visitor.out_amount || !visitor.in_amount)
+	visitor.in_amount != visitor.out_amount || !visitor.in_amount)
 return (0);
 return (1);
 }
