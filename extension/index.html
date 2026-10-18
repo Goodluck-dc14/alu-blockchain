@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HBLK Blockchain Explorer</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1b1f24;--muted:#5b6470;--border:#d9dde3;--ok:#1a7f37;--bad:#cf222e;--accent:#0969da;--code:#eef1f4}
+@media (prefers-color-scheme:dark){:root{--bg:#0d1117;--card:#161b22;--text:#e6edf3;--muted:#8b949e;--border:#30363d;--ok:#3fb950;--bad:#f85149;--accent:#58a6ff;--code:#1f252d}}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
+main{max-width:900px;margin:0 auto;padding:24px 16px}
+h1{margin:0 0 4px;font-size:26px}
+h2{font-size:18px;margin:28px 0 10px}
+.muted{color:var(--muted)}
+.drop{border:2px dashed var(--border);border-radius:10px;padding:28px;text-align:center;margin:16px 0;cursor:pointer}
+.drop.over{border-color:var(--accent)}
+button{background:var(--accent);color:#fff;border:0;border-radius:6px;padding:8px 14px;cursor:pointer;font-size:14px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.card h3{margin:0 0 8px;font-size:16px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.link{text-align:center;color:var(--muted);font-size:22px;margin:4px 0}
+.row{display:grid;grid-template-columns:110px minmax(0,1fr);gap:6px 10px;font-size:14px}
+.hash{font-family:ui-monospace,Consolas,monospace;font-size:12px;word-break:break-all;background:var(--code);padding:1px 4px;border-radius:4px}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+.checks{display:flex;gap:12px;flex-wrap:wrap;font-size:13px;margin-top:10px}
+.tx{border-top:1px solid var(--border);margin-top:10px;padding-top:10px}
+.wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{border-bottom:1px solid var(--border);padding:6px;text-align:left;vertical-align:top}
+.summary{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:14px}
+.stat b{display:block;font-size:20px}
+</style>
+</head>
+<body>
+<main>
+<h1>HBLK Blockchain Explorer</h1>
+<p class="muted">Load a file written by <code>blockchain_serialize</code> (format v0.1 to v0.3) to browse its blocks and transactions, see wallet balances, and check the integrity of every block.</p>
+<input id="file" type="file" hidden>
+<div id="drop" class="drop">Drop a serialized blockchain file here, or click to choose one</div>
+<button id="demo">Load demo (genesis block)</button>
+<div id="out"></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const hex = b => Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const short = h => h.slice(0, 16) + '…';
+
+/* Parses the HBLK binary format described in the project */
+function parse(buf) {
+  const v = new DataView(buf), u8 = new Uint8Array(buf);
+  let o = 0;
+  const take = n => {
+    if (o + n > u8.length) throw new Error('File ends early at byte ' + o);
+    o += n;
+    return u8.slice(o - n, o);
+  };
+  const ascii = n => String.fromCharCode(...take(n));
+  if (ascii(4) !== 'HBLK') throw new Error('Not an HBLK file (bad magic number)');
+  const version = ascii(3);
+  const endian = take(1)[0];
+  if (endian !== 1 && endian !== 2) throw new Error('Bad endianness byte: ' + endian);
+  const le = endian === 1;
+  const u32 = () => (take(4), v.getUint32(o - 4, le));
+  const i32 = () => (take(4), v.getInt32(o - 4, le));
+  const u64 = () => (take(8), v.getBigUint64(o - 8, le));
+  const v3 = version >= '0.3';
+  const nbBlocks = u32();
+  const nbUnspent = v3 ? u32() : 0;
+  const readOut = () => ({ amount: u32(), pub: hex(take(65)), hash: hex(take(32)) });
+  const blocks = [];
+  for (let b = 0; b < nbBlocks; b++) {
+    const start = o;
+    const blk = { index: u32(), difficulty: u32(), timestamp: u64(), nonce: u64(), prev: hex(take(32)) };
+    const info = u8.slice(start, o);
+    const len = u32();
+    if (len > 1024) throw new Error('Block ' + b + ': data length ' + len + ' is over 1024');
+    const data = take(len);
+    blk.data = new TextDecoder().decode(data);
+    blk.len = len;
+    blk.hash = hex(take(32));
+    blk.parts = [info, data];
+    blk.ids = [];
+    blk.txs = null;
+    if (v3) {
+      const n = i32();
+      if (n >= 0) {
+        blk.txs = [];
+        for (let t = 0; t < n; t++) {
+          const id = take(32);
+          blk.ids.push(id);
+          const nIn = i32(), nOut = i32();
+          const tx = { id: hex(id), ins: [], outs: [] };
+          for (let k = 0; k < nIn; k++) {
+            const bh = hex(take(32)), tid = hex(take(32)), oh = hex(take(32));
+            const sig = take(72), sl = take(1)[0];
+            tx.ins.push({ block: bh, tx: tid, out: oh, sig: hex(sig.slice(0, sl)) });
+          }
+          for (let k = 0; k < nOut; k++) tx.outs.push(readOut());
+          blk.txs.push(tx);
+        }
+      }
+    }
+    blocks.push(blk);
+  }
+  const unspent = [];
+  for (let u = 0; u < nbUnspent; u++)
+    unspent.push({ block: hex(take(32)), tx: hex(take(32)), ...readOut() });
+  return { version, le, blocks, unspent, extra: u8.length - o };
+}
+
+async function sha(parts) {
+  const all = new Uint8Array(parts.reduce((a, p) => a + p.length, 0));
+  let k = 0;
+  for (const p of parts) { all.set(p, k); k += p.length; }
+  return hex(new Uint8Array(await crypto.subtle.digest('SHA-256', all)));
+}
+
+function zeroBits(h) {
+  let n = 0;
+  for (const c of h) {
+    const d = parseInt(c, 16);
+    if (d === 0) { n += 4; continue; }
+    return n + Math.clz32(d) - 28;
+  }
+  return n;
+}
+
+/* Recomputes the hash and checks difficulty, index and link to previous block */
+async function verify(b, p, le) {
+  let hashOk = null;
+  if (window.crypto && crypto.subtle && le) {
+    const plain = await sha(b.parts);
+    const withTx = await sha([...b.parts, ...b.ids]);
+    hashOk = plain === b.hash || withTx === b.hash;
+  }
+  return {
+    hash: hashOk,
+    diff: zeroBits(b.hash) >= b.difficulty,
+    link: p ? p.hash === b.prev : b.prev === '0'.repeat(64),
+    index: p ? b.index === p.index + 1 : b.index === 0
+  };
+}
+
+const mark = (ok, label) => ok === null
+  ? '<span class="muted">' + label + ': skipped</span>'
+  : '<span class="' + (ok ? 'ok' : 'bad') + '">' + (ok ? '✓' : '✗') + ' ' + label + '</span>';
+
+function txHtml(tx) {
+  const ins = tx.ins.map(i => 'spends <span class="hash">' + short(i.out) + '</span>').join('<br>') || 'none';
+  const outs = tx.outs.map(o => '<b>' + o.amount + '</b> → <span class="hash">' + short(o.pub) + '</span>').join('<br>') || 'none';
+  return '<div class="tx"><div class="row">' +
+    '<span class="muted">tx id</span><span class="hash">' + tx.id + '</span>' +
+    '<span class="muted">inputs</span><span>' + ins + '</span>' +
+    '<span class="muted">outputs</span><span>' + outs + '</span></div></div>';
+}
+
+async function show(buf) {
+  let c;
+  try { c = parse(buf); } catch (e) {
+    $('out').innerHTML = '<p class="bad">' + esc(e.message) + '</p>';
+    return;
+  }
+  let valid = 0, txCount = 0, html = '';
+  for (let i = 0; i < c.blocks.length; i++) {
+    const b = c.blocks[i], p = c.blocks[i - 1];
+    const r = await verify(b, p, c.le);
+    const good = r.hash !== false && r.diff && r.link && r.index;
+    if (good) valid++;
+    if (b.txs) txCount += b.txs.length;
+    if (i) html += '<div class="link">↓</div>';
+    html += '<section class="card"><h3><span>Block #' + b.index + (i === 0 ? ' (genesis)' : '') + '</span>' +
+      '<span class="' + (good ? 'ok' : 'bad') + '">' + (good ? 'valid' : 'invalid') + '</span></h3>' +
+      '<div class="row">' +
+      '<span class="muted">data</span><span>"' + esc(b.data) + '" (' + b.len + ' bytes)</span>' +
+      '<span class="muted">time</span><span>' + new Date(Number(b.timestamp) * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC</span>' +
+      '<span class="muted">difficulty</span><span>' + b.difficulty + ' bits (hash has ' + zeroBits(b.hash) + ')</span>' +
+      '<span class="muted">nonce</span><span>' + b.nonce + '</span>' +
+      '<span class="muted">prev hash</span><span class="hash">' + b.prev + '</span>' +
+      '<span class="muted">hash</span><span class="hash">' + b.hash + '</span>' +
+      '<span class="muted">transactions</span><span>' + (b.txs ? b.txs.length : 'none (NULL list)') + '</span>' +
+      '</div>' + (b.txs ? b.txs.map(txHtml).join('') : '') +
+      '<div class="checks">' + mark(r.hash, 'hash') + mark(r.diff, 'difficulty') + mark(r.index, 'index') + mark(r.link, 'link to previous') + '</div>' +
+      '</section>';
+  }
+  const balances = {};
+  let coins = 0;
+  for (const u of c.unspent) { balances[u.pub] = (balances[u.pub] || 0) + u.amount; coins += u.amount; }
+  const wallets = Object.entries(balances).sort((a, b) => b[1] - a[1]);
+  let tail = '';
+  if (wallets.length) {
+    tail += '<h2>Wallet balances</h2><div class="wrap"><table><tr><th>Public key</th><th>Balance</th></tr>' +
+      wallets.map(w => '<tr><td class="hash">' + w[0] + '</td><td><b>' + w[1] + '</b></td></tr>').join('') + '</table></div>';
+    tail += '<h2>Unspent outputs</h2><div class="wrap"><table><tr><th>Block</th><th>Transaction</th><th>Amount</th><th>Output hash</th></tr>' +
+      c.unspent.map(u => '<tr><td class="hash">' + short(u.block) + '</td><td class="hash">' + short(u.tx) + '</td><td>' + u.amount + '</td><td class="hash">' + short(u.hash) + '</td></tr>').join('') + '</table></div>';
+  }
+  if (c.extra) tail += '<p class="bad">Warning: ' + c.extra + ' extra bytes at the end of the file.</p>';
+  $('out').innerHTML =
+    '<div class="summary">' +
+    '<div class="stat">version<b>' + esc(c.version) + '</b></div>' +
+    '<div class="stat">blocks<b>' + c.blocks.length + '</b></div>' +
+    '<div class="stat">valid blocks<b class="' + (valid === c.blocks.length ? 'ok' : 'bad') + '">' + valid + '</b></div>' +
+    '<div class="stat">transactions<b>' + txCount + '</b></div>' +
+    '<div class="stat">coins in circulation<b>' + coins + '</b></div>' +
+    '</div>' + html + tail;
+}
+
+/* Builds a v0.3 file holding only the genesis block, for the demo button */
+function demoFile() {
+  const buf = new ArrayBuffer(128), v = new DataView(buf), u8 = new Uint8Array(buf);
+  u8.set([...'HBLK0.3'].map(ch => ch.charCodeAt(0)), 0);
+  u8[7] = 1;
+  v.setUint32(8, 1, true);
+  v.setUint32(12, 0, true);
+  v.setBigUint64(24, 1537578000n, true);
+  v.setUint32(72, 16, true);
+  u8.set([...'Holberton School'].map(ch => ch.charCodeAt(0)), 76);
+  const h = 'c52c26c8b5461639635d8edf2a97d48d0c8e0009c817f2b1d3d7ff2f04515803';
+  for (let i = 0; i < 32; i++) u8[92 + i] = parseInt(h.substr(i * 2, 2), 16);
+  v.setInt32(124, -1, true);
+  return buf;
+}
+
+const load = f => f.arrayBuffer().then(show);
+$('drop').onclick = () => $('file').click();
+$('file').onchange = e => e.target.files[0] && load(e.target.files[0]);
+['dragenter', 'dragover'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.remove('over'); }));
+$('drop').addEventListener('drop', e => e.dataTransfer.files[0] && load(e.dataTransfer.files[0]));
+$('demo').onclick = () => show(demoFile());
+</script>
+</body>
+</html>
