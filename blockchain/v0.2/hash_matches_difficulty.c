@@ -1,33 +1,22 @@
 #include "blockchain.h"
 
 /**
-* hash_matches_difficulty - checks if hash matches difficulty.
-* @hash: hash to check.
-* @difficulty: difficulty of a block.
-* Return: 1 if hash matches difficulty, 0 otherwise.
-* Author: Frank Onyema Orji.
-*/
+ * hash_matches_difficulty - checks if a hash matches a difficulty
+ * @hash: hash to check
+ * @difficulty: number of leading zero bits required
+ * Return: 1 if the hash matches the difficulty, 0 otherwise
+ */
 int hash_matches_difficulty(uint8_t const hash[SHA256_DIGEST_LENGTH],
-
 uint32_t difficulty)
 {
-	uint32_t i, mod, byte, bit;
+uint32_t i, full = difficulty / 8, rem = difficulty % 8;
 
-	mod = difficulty / 8;
-	byte = difficulty % 8;
-
-	for (i = 0; i < mod; i++)
-	{
-		if (hash[i] != 0)
-			return (0);
-	}
-	if (hash[mod] >> (8 - byte))
-		return (0);
-	for (bit = 0; bit < (byte - 1); bit++)
-	{
-		if ((hash[mod] >> (7 - bit)) & 1)
-			return (0);
-	}
-	return (1);
+if (!hash || difficulty > SHA256_DIGEST_LENGTH * 8)
+return (0);
+for (i = 0; i < full; i++)
+if (hash[i])
+return (0);
+if (rem && (hash[full] >> (8 - rem)))
+return (0);
+return (1);
 }
-
